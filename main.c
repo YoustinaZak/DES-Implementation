@@ -1,4 +1,6 @@
 #include <stdio.h>
+#include <stdint.h>
+#include <string.h>
 
 const int IP[64] = { //initial permutation
     58, 50, 42, 34, 26, 18, 10, 2,
@@ -118,7 +120,57 @@ const int SBOX[8][4][16] = {
         {2,1,14,7,4,10,8,13,15,12,9,0,3,5,6,11}
     }
 };
+enum {
+    encrypt,
+    decrypt
+} op;
 
 int main(int argc ,char **argv){
+    FILE *fkey, *fplain, *fcipher;
+    if (strcmp(argv[1], "e") == 0) {
+        // encrypt
+        op=0;
+        if (argc != 5) {
+            fprintf(stderr, "Usage: %s key plaintext ciphertext\n", argv[0]);
+            return 1;
+        }
+        fprintf(stderr,"Encryption");
+        fkey = fopen(argv[2], "rb");
+        fplain = fopen(argv[3], "rb");
+        fcipher = fopen(argv[4], "wb");
+    } else if (strcmp(argv[1], "e") == 0){
+        // decrypt
+        op=1;
+        if (argc != 5) {
+            fprintf(stderr, "Usage: %s keyfile ciphertext plaintextfile\n", argv[0]);
+            return 1;
+        }
+
+        fkey = fopen(argv[2], "rb");
+        fcipher = fopen(argv[3], "rb");
+        fplain = fopen(argv[4], "wb");
+    }
+    
+
+    if (!fkey || !fplain || !fcipher) { //check if any of them don't open
+        perror("File open error");
+        return 1;
+    }
+
+    // Read key
+    uint64_t key;
+    fread(&key, sizeof(uint64_t), 1, fkey);
+    fclose(fkey);
+
+    uint64_t block;
+
+    // Read plaintext 8 bytes at a time
+    while (fread(&block, sizeof(uint64_t), 1, op? fcipher: fplain) == 1) {
+        //Preform the whole DES on that block
+        //fwrite(&encrypted, sizeof(uint64_t), 1, fcipher);
+    }
+
+    fclose(fplain);
+    fclose(fcipher);
     return 0;
 }
