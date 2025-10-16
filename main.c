@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <stdint.h>
-#include <string.h>
 
 const int IP[64] = { //initial permutation
     58, 50, 42, 34, 26, 18, 10, 2,
@@ -127,7 +126,7 @@ enum {
 
 int main(int argc ,char **argv){
     FILE *fkey, *fplain, *fcipher;
-    if (strcmp(argv[1], "e") == 0) {
+    if (argv[1][0]== 'e') {
         // encrypt
         op=0;
         if (argc != 5) {
@@ -138,7 +137,7 @@ int main(int argc ,char **argv){
         fkey = fopen(argv[2], "rb");
         fplain = fopen(argv[3], "rb");
         fcipher = fopen(argv[4], "wb");
-    } else if (strcmp(argv[1], "e") == 0){
+    } else if (argv[1][0]== 'd'){
         // decrypt
         op=1;
         if (argc != 5) {
