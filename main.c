@@ -123,6 +123,133 @@ enum {
     encrypt,
     decrypt
 } op;
+//data processing blocks
+uint64_t  InitialPermutation(uint64_t block)
+{
+
+}
+uint64_t FinalPermutation(uint64_t block)
+{
+
+}
+uint64_t Swap32(uint64_t block)
+{
+
+}
+
+
+//Key schedule blocks
+uint64_t PermutationChoice1(uint64_t key)
+{
+
+}
+uint64_t PermutationChoice2(uint64_t block)
+{
+
+}
+
+
+uint64_t LeftCircularShift(uint64_t key,int roundNumber)
+{
+
+}
+
+
+//Function blocks
+
+uint64_t ExpansionPermutation(uint32_t halfblock)
+{
+
+}
+
+uint32_t SBoxSubstitution(uint64_t block)
+{
+
+}
+
+uint32_t Permutation(uint32_t block)
+{
+
+}
+//big blocks
+uint32_t FeistelFunction(uint32_t halfblock,uint64_t key)
+{
+    uint64_t temp=ExpansionPermutation(halfblock);
+    temp=temp^key;//xor
+    uint32_t out =SBoxSubstitution(temp);
+    out=Permutation(out);
+    return out;
+
+}
+
+
+uint64_t Round(uint64_t block,uint64_t key)
+{
+    uint32_t inleft= (block >>32) & 0xFFFFFFFF;
+    uint32_t inright= block & 0xFFFFFFFF;
+
+    uint32_t outright= inleft ^ FeistelFunction(inright,key);
+    uint32_t outleft= inright;
+    uint64_t out= ((uint64_t)outleft <<32) | (uint64_t)outright;
+
+    return out;
+
+
+}
+
+
+//Main Blocks
+void KeySchedule(uint64_t key,uint64_t  subkeys[16])
+{
+
+    uint64_t tempKey= PermutationChoice1(key);
+
+
+    for (int i=0;i<16;i++)
+    {
+        //left shifts logic here
+
+        uint64_t tempKey= LeftCircularShift(tempKey,i+1);
+
+
+        subkeys[i]= PermutationChoice2(tempKey);
+    }
+
+}
+uint64_t DES_Encrypt(uint64_t block,uint64_t subkeys[16])
+{
+    block= InitialPermutation(block);
+
+    for (int i=0;i<16;i++)
+    {
+        block= Round(block,subkeys[i]);
+    }
+
+    block= Swap32(block);
+
+    block= FinalPermutation(block);
+
+    return block;
+}
+
+uint64_t DES_Decrypt(uint64_t block,uint64_t subkeys[16])
+{
+    block= InitialPermutation(block);
+
+    for (int i=15;i>=0;i--)
+    {
+        block= Round(block,subkeys[i]);
+    }
+
+    block= Swap32(block);
+
+    block= FinalPermutation(block);
+
+    return block;
+}
+
+
+
 
 int main(int argc ,char **argv){
     FILE *fkey, *fplain, *fcipher;
@@ -160,6 +287,10 @@ int main(int argc ,char **argv){
     uint64_t key;
     fread(&key, sizeof(uint64_t), 1, fkey);
     fclose(fkey);
+    printf("Key read: %016llx\n", key);
+    uint64_t subkeys[16];
+    KeySchedule(key,subkeys);
+    //key cycle
 
     uint64_t block;
 
@@ -167,6 +298,20 @@ int main(int argc ,char **argv){
     while (fread(&block, sizeof(uint64_t), 1, op? fcipher: fplain) == 1) {
         //Preform the whole DES on that block
         //fwrite(&encrypted, sizeof(uint64_t), 1, fcipher);
+        printf("Block read: %016llx\n", block);
+        if(op==0)// encrypt path
+        {
+            uint64_t encrypted= DES_Encrypt(block,subkeys);
+            fwrite(&encrypted, sizeof(uint64_t), 1, fcipher);
+            printf("Block encrypted: %016llx\n", encrypted);
+        }
+        else // decrypt path
+        {
+            uint64_t decrypted= DES_Decrypt(block,subkeys);
+            fwrite(&decrypted, sizeof(uint64_t), 1, fplain);
+            printf("Block decrypted: %016llx\n", decrypted);
+
+        }
     }
 
     fclose(fplain);
