@@ -134,7 +134,9 @@ uint64_t FinalPermutation(uint64_t block)
 }
 uint64_t Swap32(uint64_t block)
 {
-
+    uint64_t left = (block >> 32) & 0xFFFFFFFFULL;
+    uint64_t right = block & 0xFFFFFFFFULL;
+    return (right << 32) | left;
 }
 
 
@@ -209,7 +211,7 @@ void KeySchedule(uint64_t key,uint64_t  subkeys[16])
     {
         //left shifts logic here
 
-        uint64_t tempKey= LeftCircularShift(tempKey,i+1);
+        tempKey= LeftCircularShift(tempKey,i+1);
 
 
         subkeys[i]= PermutationChoice2(tempKey);
@@ -260,7 +262,7 @@ int main(int argc ,char **argv){
             fprintf(stderr, "Usage: %s key plaintext ciphertext\n", argv[0]);
             return 1;
         }
-        fprintf(stderr,"Encryption");
+        fprintf(stderr,"Encryption\n");
         fkey = fopen(argv[2], "rb");
         fplain = fopen(argv[3], "rb");
         fcipher = fopen(argv[4], "wb");
@@ -284,8 +286,12 @@ int main(int argc ,char **argv){
     }
 
     // Read key
-    uint64_t key;
-    fread(&key, sizeof(uint64_t), 1, fkey);
+    uint64_t key = 0;
+    if (fread(&key, sizeof(uint64_t), 1, fkey) != 1) {
+        fprintf(stderr, "Error reading key file\n");
+        fclose(fkey);
+        return 1;
+    }
     fclose(fkey);
     printf("Key read: %016llx\n", key);
     uint64_t subkeys[16];
