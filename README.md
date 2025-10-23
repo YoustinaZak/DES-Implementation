@@ -2,7 +2,7 @@
 gcc -o3 main.c -o des
 
 #Run Encryption#
-des.exe "e" key.txt plaintext.text ciphertext.txt
+des.exe "e" key.txt plaintext.txt ciphertext.txt
 
 #Run Decryption#
-des.exe "d" key.txt plaintext.text ciphertext.txt
+des.exe "d" key.txt plaintext.txt ciphertext.txt
