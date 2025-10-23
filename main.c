@@ -166,6 +166,15 @@ uint64_t ExpansionPermutation(uint32_t halfblock)
 
 uint32_t SBoxSubstitution(uint64_t block)
 {
+    uint32_t output = 0;
+    for (int i = 0; i < 8; i++) {
+        uint8_t sixBits = (block >> (42 - 6*i)) & 0x3F;
+        int row = ((sixBits & 0x20) >> 4) | (sixBits & 0x01);
+        int col = (sixBits >> 1) & 0x0F;
+        uint8_t val = SBOX[i][row][col];
+        output = (output << 4) | val;
+    }
+    return output;
 
 }
 
