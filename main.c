@@ -9,7 +9,7 @@
 
 //#define ROTL(x, n, bits) ( ((x) << (n)) | ((x) >> ((bits) - (n))) ) //left circular shift
 #define SWAP32(block) ( (((block) & 0xFFFFFFFFULL) << 32) | (((block) >> 32) & 0xFFFFFFFFULL) )
-#define DES_LEFT_CIRCULAR_SHIFT28(value, shift) ( (( ( value & 0x0FFFFFFF ) << shift ) | ( ( value& 0x0FFFFFFF ) >> (28 - shift) )) & 0x0FFFFFFF )
+#define DES_LEFT_CIRCULAR_SHIFT28(value, shift) ( (( ( value & 0x0FFFFFFF ) << shift ) | ( ( value& 0x0FFFFFFF ) >> (28 - shift) )) & 0x0FFFFFFF)
 
 const int SBOX[8][4][16] = {
     // S1
@@ -83,29 +83,33 @@ void Left_Circular_Shift(uint64_t* key56, int round) {
     uint32_t D = *key56 & 0x0FFFFFFF;
 
     // Get the shift amount for this round
-    int shift = DES_SHIFT_SCHEDULE[round - 1];
+    int shift = DES_SHIFT_SCHEDULE[round];
     C = DES_LEFT_CIRCULAR_SHIFT28(C, shift);
     D = DES_LEFT_CIRCULAR_SHIFT28(D, shift);
 
     // Combine back into a 56-bit key
     uint64_t combined = (((uint64_t)C) << 28) | (uint64_t)D;
-    *key56= combined & 0x00FFFFFFFFFFFFFFULL; // ensure 56 bits only
+    *key56= combined; // ensure 56 bits only
 }
 //data processing blocks
-uint64_t  InitialPermutation(uint64_t* block, uint64_t* output)
-{
+void InitialPermutation(uint64_t* block)
+{   
+    uint64_t output=0;
     for (int byte = 0; byte < 8; ++byte) {
         uint8_t val = (*block >> ((7 - byte) * 8)) & 0xFF;
-        *output |= DES_IP_LUT[byte][val];
+        output |= DES_IP_LUT[byte][val];
     }
+    *block=output;
 }
-uint64_t FinalPermutation(uint64_t* block, uint64_t* output)
+void FinalPermutation(uint64_t* block)
 {
+    uint64_t output=0;
     for (int byte = 0; byte < 8; ++byte) {
-        *output |= DES_FP_LUT[byte][(*block >> ((7 - byte) * 8)) & 0xFF];
+        output |= DES_FP_LUT[byte][(*block >> ((7 - byte) * 8)) & 0xFF];
     }
+    *block=output;
 }
-uint64_t Swap32(uint64_t block)
+uint64_t Swap32(uint64_t block) //not used
 {
     uint64_t left = (block >> 32) & 0xFFFFFFFFULL;
     uint64_t right = block & 0xFFFFFFFFULL;
@@ -130,45 +134,58 @@ uint64_t PermutationChoice2(uint64_t key)
 void ExpansionPermutation(uint32_t* halfblock, uint64_t* output)
 {
     for (int byte = 0; byte < 4; ++byte) {
-        *output |= DES_P_LUT[byte][(*halfblock >> ((3 - byte) * 8)) & 0xFF];
+        *output |= DES_E_LUT[byte][(*halfblock >> ((3 - byte) * 8)) & 0xFF];
     }
 }
 
 uint32_t SBoxSubstitution(uint64_t block)
 {
-
-}
-
-void Permutation(uint32_t* block, uint32_t* output)
-{
-    for (int byte = 0; byte < 4; ++byte) {
-        *output |= DES_P_LUT[byte][(*block >> ((3 - byte) * 8)) & 0xFF];
+    uint32_t output = 0;
+    for (int i = 0; i < 8; i++) {
+        uint8_t sixBits = (block >> (42 - 6*i)) & 0x3F;
+        int row = ((sixBits & 0x20) >> 4) | (sixBits & 0x01);
+        int col = (sixBits >> 1) & 0x0F;
+        uint8_t val = SBOX[i][row][col];
+        output = (output << 4) | val;
     }
+    return output;
 }
-//big blocks
-/*uint32_t FeistelFunction(uint32_t halfblock,uint64_t key)
+
+void Permutation(uint32_t* block)
 {
-    uint64_t temp=ExpansionPermutation(halfblock);
+    uint64_t output=0;
+    for (int byte = 0; byte < 4; ++byte) {
+        output |= DES_P_LUT[byte][(*block >> ((3 - byte) * 8)) & 0xFF];
+    }
+    *block = output;
+}
+uint32_t FeistelFunction(uint32_t halfblock,uint64_t key)
+{
+    uint64_t temp=0;
+    printf("R: %08llX \n",halfblock);
+    ExpansionPermutation(&halfblock,&temp);
+    printf("Exp: %016llX \n",temp);
     temp=temp^key;//xor
+    printf("XOR: %016llX \n",temp);
     uint32_t out =SBoxSubstitution(temp);
-    out=Permutation(out);
+    printf("Sbox: %016llX \n",out);
+    Permutation(&out);
+    printf("Perm: %016llX \n",out);
     return out;
 
-}*/
-
-/*uint64_t Round(uint64_t block,uint64_t key)
+}
+void Round(uint64_t* block,uint64_t key)
 {
-    uint32_t inleft= (block >>32) & 0xFFFFFFFF;
-    uint32_t inright= block & 0xFFFFFFFF;
+    //swap
+    uint32_t inleft= (*block >>32) & 0x00000000FFFFFFFF;
+    uint32_t inright= (*block) & 0x00000000FFFFFFFF;
 
     uint32_t outright= inleft ^ FeistelFunction(inright,key);
     uint32_t outleft= inright;
     uint64_t out= ((uint64_t)outleft <<32) | (uint64_t)outright;
 
-    return out;
-
-
-}*/
+    *block=out;
+}
 
 //Main Blocks
 void KeySchedule(uint64_t* key,uint64_t  subkeys[16])
@@ -178,45 +195,43 @@ void KeySchedule(uint64_t* key,uint64_t  subkeys[16])
     for (int i=0;i<16;i++)
     {
         Left_Circular_Shift(key,i);
+        printf("Key after Left Shift: %016llX, %d\n",*key,i+1);
         subkeys[i]= PermutationChoice2(*key);
     }
 
 }
-/*uint64_t DES_Encrypt(uint64_t* block,uint64_t subkeys[16])
+void DES_Encrypt(uint64_t* block,uint64_t subkeys[16])
 {
-    uint64_t ip_block=0;
-    InitialPermutation(block, &ip_block);
-
+    InitialPermutation(block);
+    printf("Init Perm: %016llX \n",*block);
     for (int i=0;i<16;i++)
     {
-        block= Round(block,subkeys[i]);
+        Round(block,subkeys[i]);
+        printf("After Round %d: %016llX \n",i+1,*block);
     }
 
-    block= Swap32(block);
-
-    block= FinalPermutation(block);
-
-    return block;
-}*/
-
-/*uint64_t DES_Decrypt(uint64_t block,uint64_t subkeys[16])
+    uint64_t left = (*block >> 32) & 0xFFFFFFFFULL;
+    uint64_t right = *block & 0xFFFFFFFFULL;
+    *block= (right << 32) | left;
+    FinalPermutation(block);
+}
+void DES_Decrypt(uint64_t* block,uint64_t subkeys[16])
 {
-    block= InitialPermutation(block);
-
+    InitialPermutation(block);
+    printf("Init Perm: %016llX \n",*block);
     for (int i=15;i>=0;i--)
     {
-        block= Round(block,subkeys[i]);
+        Round(block,subkeys[i]);
+        printf("After Round %d: %016llX \n",i+1,*block);
     }
-
-    block= Swap32(block);
-
-    block= FinalPermutation(block);
-
-    return block;
-}*/
+    uint64_t left = (*block >> 32) & 0xFFFFFFFFULL;
+    uint64_t right = *block & 0xFFFFFFFFULL;
+    *block= (right << 32) | left;
+    FinalPermutation(block);
+}
 
 int main(int argc ,char **argv){
-    /*FILE *fkey, *fplain, *fcipher;
+    FILE *fkey, *fplain, *fcipher;
     if (argv[1][0]== 'e') {
         // encrypt
         op=0;
@@ -235,57 +250,53 @@ int main(int argc ,char **argv){
             fprintf(stderr, "Usage: %s keyfile ciphertext plaintextfile\n", argv[0]);
             return 1;
         }
-
         fkey = fopen(argv[2], "rb");
         fcipher = fopen(argv[3], "rb");
         fplain = fopen(argv[4], "wb");
     }
     
-
     if (!fkey || !fplain || !fcipher) { //check if any of them don't open
         perror("File open error");
         return 1;
     }
 
     // Read key
-    uint64_t key = 0;
+    uint64_t key,block = 0;
     if (fread(&key, sizeof(uint64_t), 1, fkey) != 1) {
         fprintf(stderr, "Error reading key file\n");
         fclose(fkey);
         return 1;
     }
     fclose(fkey);
-    printf("Key read: %016llx\n", key);*/
-    uint64_t key = 0x133457799BBCDFF1;
+    printf("Key read: %016llx\n", key);
+    
     uint64_t subkeys[16]={0};
     KeySchedule(&key,subkeys);
     //key cycle
     for(int i=0; i<16;i++){
         printf("Key for round {%d}= {%016llX} \n",i+1,subkeys[i]);
     }
-    /*uint64_t block;
-
+    
     // Read plaintext 8 bytes at a time
     while (fread(&block, sizeof(uint64_t), 1, op? fcipher: fplain) == 1) {
         //Preform the whole DES on that block
-        //fwrite(&encrypted, sizeof(uint64_t), 1, fcipher);
         printf("Block read: %016llx\n", block);
         if(op==0)// encrypt path
         {
-            uint64_t encrypted= DES_Encrypt(block,subkeys);
-            fwrite(&encrypted, sizeof(uint64_t), 1, fcipher);
-            printf("Block encrypted: %016llx\n", encrypted);
+            DES_Encrypt(&block,subkeys);
+            fwrite(&block, sizeof(uint64_t), 1, fcipher);
+            printf("Block encrypted: %016llx\n", block);
         }
         else // decrypt path
         {
-            uint64_t decrypted= DES_Decrypt(block,subkeys);
-            fwrite(&decrypted, sizeof(uint64_t), 1, fplain);
-            printf("Block decrypted: %016llx\n", decrypted);
+            DES_Decrypt(&block,subkeys);
+            fwrite(&block, sizeof(uint64_t), 1, fplain);
+            printf("Block decrypted: %016llx\n", block);
 
         }
     }
 
     fclose(fplain);
-    fclose(fcipher); */
+    fclose(fcipher);
     return 0;
 }
