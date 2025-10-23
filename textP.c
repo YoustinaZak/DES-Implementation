@@ -34,7 +34,7 @@ void perm(uint32_t* input, uint32_t* output){
         *output |= DES_P_LUT[byte][(*input >> ((3 - byte) * 8)) & 0xFF];
     }
 }
-void final_perm(uint64_t* input){
+void final_perm(uint64_t* input, uint64_t* output){
     for (int byte = 0; byte < 8; ++byte) {
         *output |= DES_FP_LUT[byte][(*input >> ((7 - byte) * 8)) & 0xFF];
     }
