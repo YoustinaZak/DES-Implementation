@@ -6,11 +6,14 @@
 #include "des_exp_lut.h"
 #include "des_p_lut.h"
 #include "des_fp_lut.h"
-
+#include "des_sbox_lut.h"
+#include <time.h>
 //#define ROTL(x, n, bits) ( ((x) << (n)) | ((x) >> ((bits) - (n))) ) //left circular shift
 #define SWAP32(block) ( (((block) & 0xFFFFFFFFULL) << 32) | (((block) >> 32) & 0xFFFFFFFFULL) )
 #define DES_LEFT_CIRCULAR_SHIFT28(value, shift) ( (( ( value & 0x0FFFFFFF ) << shift ) | ( ( value& 0x0FFFFFFF ) >> (28 - shift) )) & 0x0FFFFFFF)
-
+#define BUF_SIZE (8 * 1024 * 1024)  // 8 MB buffer
+uint8_t buffer[BUF_SIZE];
+size_t bytesRead;
 const int SBOX[8][4][16] = {
     // S1
     {
@@ -92,7 +95,7 @@ void Left_Circular_Shift(uint64_t* key56, int round) {
     *key56= combined; // ensure 56 bits only
 }
 //data processing blocks
-void InitialPermutation(uint64_t* block)
+static inline void InitialPermutation(uint64_t* block)
 {   
     uint64_t output=0;
     for (int byte = 0; byte < 8; ++byte) {
@@ -138,7 +141,7 @@ void ExpansionPermutation(uint32_t* halfblock, uint64_t* output)
     }
 }
 
-uint32_t SBoxSubstitution(uint64_t block)
+/*uint32_t SBoxSubstitution(uint64_t block)
 {
     uint32_t output = 0;
     for (int i = 0; i < 8; i++) {
@@ -149,8 +152,15 @@ uint32_t SBoxSubstitution(uint64_t block)
         output = (output << 4) | val;
     }
     return output;
+}*/
+static inline uint32_t SBoxSubstitution(uint64_t block) {
+    uint32_t out = 0;
+    for (int i = 0; i < 8; i++) {
+        uint8_t sixBits = (block >> (42 - 6*i)) & 0x3F;
+        out = (out << 4) | SBOX_LUT[i][sixBits];
+    }
+    return out;
 }
-
 void Permutation(uint32_t* block)
 {
     uint64_t output=0;
@@ -162,19 +172,14 @@ void Permutation(uint32_t* block)
 uint32_t FeistelFunction(uint32_t halfblock,uint64_t key)
 {
     uint64_t temp=0;
-    printf("R: %08llX \n",halfblock);
     ExpansionPermutation(&halfblock,&temp);
-    printf("Exp: %016llX \n",temp);
     temp=temp^key;//xor
-    printf("XOR: %016llX \n",temp);
     uint32_t out =SBoxSubstitution(temp);
-    printf("Sbox: %016llX \n",out);
     Permutation(&out);
-    printf("Perm: %016llX \n",out);
     return out;
 
 }
-void Round(uint64_t* block,uint64_t key)
+static inline void Round(uint64_t* block,uint64_t key)
 {
     //swap
     uint32_t inleft= (*block >>32) & 0x00000000FFFFFFFF;
@@ -191,11 +196,9 @@ void Round(uint64_t* block,uint64_t key)
 void KeySchedule(uint64_t* key,uint64_t  subkeys[16])
 {
     PermutationChoice1(key);
-    printf("Key after PC1: %016llX \n",*key);
     for (int i=0;i<16;i++)
     {
         Left_Circular_Shift(key,i);
-        printf("Key after Left Shift: %016llX, %d\n",*key,i+1);
         subkeys[i]= PermutationChoice2(*key);
     }
 
@@ -203,11 +206,9 @@ void KeySchedule(uint64_t* key,uint64_t  subkeys[16])
 void DES_Encrypt(uint64_t* block,uint64_t subkeys[16])
 {
     InitialPermutation(block);
-    printf("Init Perm: %016llX \n",*block);
     for (int i=0;i<16;i++)
     {
         Round(block,subkeys[i]);
-        printf("After Round %d: %016llX \n",i+1,*block);
     }
 
     uint64_t left = (*block >> 32) & 0xFFFFFFFFULL;
@@ -218,18 +219,16 @@ void DES_Encrypt(uint64_t* block,uint64_t subkeys[16])
 void DES_Decrypt(uint64_t* block,uint64_t subkeys[16])
 {
     InitialPermutation(block);
-    printf("Init Perm: %016llX \n",*block);
     for (int i=15;i>=0;i--)
     {
         Round(block,subkeys[i]);
-        printf("After Round %d: %016llX \n",i+1,*block);
     }
     uint64_t left = (*block >> 32) & 0xFFFFFFFFULL;
     uint64_t right = *block & 0xFFFFFFFFULL;
     *block= (right << 32) | left;
     FinalPermutation(block);
 }
-uint64_t swapEndian64(uint64_t value) {
+static inline uint64_t swapEndian64(uint64_t value) {
     return ((value & 0x00000000000000FFULL) << 56) |
            ((value & 0x000000000000FF00ULL) << 40) |
            ((value & 0x0000000000FF0000ULL) << 24) |
@@ -242,6 +241,9 @@ uint64_t swapEndian64(uint64_t value) {
 
 
 int main(int argc ,char **argv){
+    clock_t start, end;
+    double cpu_time_used;
+    start = clock();
     FILE *fkey, *fplain, *fcipher;
     if (argv[1][0]== 'e') {
         // encrypt
@@ -250,7 +252,6 @@ int main(int argc ,char **argv){
             fprintf(stderr, "Usage: %s key plaintext ciphertext\n", argv[0]);
             return 1;
         }
-        fprintf(stderr,"Encryption\n");
         fkey = fopen(argv[2], "rb");
         fplain = fopen(argv[3], "rb");
         fcipher = fopen(argv[4], "wb");
@@ -282,39 +283,43 @@ int main(int argc ,char **argv){
 
     key=swapEndian64(key);
 
-    printf("Key read: %016llx\n", key);
+    //printf("Key read: %016llx\n", key);
     
     uint64_t subkeys[16]={0};
     KeySchedule(&key,subkeys);
-    //key cycle
-    for(int i=0; i<16;i++){
-        printf("Key for round {%d}= {%016llX} \n",i+1,subkeys[i]);
-    }
-    printf("kiroooos\n");
-    printf("op=%d\n",op);
     
     // Read plaintext 8 bytes at a time
-    while (fread(&block, sizeof(uint64_t), 1, op? fcipher: fplain) == 1) {
-        //Preform the whole DES on that block
-        block=swapEndian64(block);
-        printf("Block read: %016llx\n", block);
-        if(op==0)// encrypt path
-        {
-            DES_Encrypt(&block,subkeys);
-            block=swapEndian64(block);
-            fwrite(&block, sizeof(uint64_t), 1, fcipher);
-            printf("Block encrypted: %016llx\n", block);
-        }
-        else // decrypt path
-        {
-            DES_Decrypt(&block,subkeys);
-            block=swapEndian64(block);
-            fwrite(&block, sizeof(uint64_t), 1, fplain);
-            printf("Block decrypted: %016llx\n", block);
+double t_encrypt = 0, t_feistel = 0, t_io = 0;
+clock_t t1, t2;
 
-        }
+while ((bytesRead = fread(buffer, 1, BUF_SIZE, op ? fcipher : fplain)) > 0) {
+    t1 = clock();
+    for (size_t i = 0; i < bytesRead; i += 8) {
+        uint64_t block;
+        memcpy(&block, buffer + i, 8);
+        block = swapEndian64(block);
+
+        clock_t t_feistel_start = clock();
+        if (op == 0)
+            DES_Encrypt(&block, subkeys);
+        else
+            DES_Decrypt(&block, subkeys);
+        t_feistel += (double)(clock() - t_feistel_start) / CLOCKS_PER_SEC;
+
+        block = swapEndian64(block);
+        memcpy(buffer + i, &block, 8);
     }
+    t2 = clock();
+    t_encrypt += (double)(t2 - t1) / CLOCKS_PER_SEC;
 
+    clock_t t_io_start = clock();
+    fwrite(buffer, 1, bytesRead, op ? fplain : fcipher);
+    t_io += (double)(clock() - t_io_start) / CLOCKS_PER_SEC;
+}
+
+    printf("Total encryption/decryption time: %.3f s\n", t_encrypt);
+printf("Feistel+DES core time: %.3f s\n", t_feistel);
+printf("I/O time: %.3f s\n", t_io);
     fclose(fplain);
     fclose(fcipher);
     return 0;
