@@ -229,6 +229,17 @@ void DES_Decrypt(uint64_t* block,uint64_t subkeys[16])
     *block= (right << 32) | left;
     FinalPermutation(block);
 }
+uint64_t swapEndian64(uint64_t value) {
+    return ((value & 0x00000000000000FFULL) << 56) |
+           ((value & 0x000000000000FF00ULL) << 40) |
+           ((value & 0x0000000000FF0000ULL) << 24) |
+           ((value & 0x00000000FF000000ULL) << 8)  |
+           ((value & 0x000000FF00000000ULL) >> 8)  |
+           ((value & 0x0000FF0000000000ULL) >> 24) |
+           ((value & 0x00FF000000000000ULL) >> 40) |
+           ((value & 0xFF00000000000000ULL) >> 56);
+}
+
 
 int main(int argc ,char **argv){
     FILE *fkey, *fplain, *fcipher;
@@ -268,6 +279,9 @@ int main(int argc ,char **argv){
         return 1;
     }
     fclose(fkey);
+
+    key=swapEndian64(key);
+
     printf("Key read: %016llx\n", key);
     
     uint64_t subkeys[16]={0};
@@ -276,20 +290,25 @@ int main(int argc ,char **argv){
     for(int i=0; i<16;i++){
         printf("Key for round {%d}= {%016llX} \n",i+1,subkeys[i]);
     }
+    printf("kiroooos\n");
+    printf("op=%d\n",op);
     
     // Read plaintext 8 bytes at a time
     while (fread(&block, sizeof(uint64_t), 1, op? fcipher: fplain) == 1) {
         //Preform the whole DES on that block
+        block=swapEndian64(block);
         printf("Block read: %016llx\n", block);
         if(op==0)// encrypt path
         {
             DES_Encrypt(&block,subkeys);
+            block=swapEndian64(block);
             fwrite(&block, sizeof(uint64_t), 1, fcipher);
             printf("Block encrypted: %016llx\n", block);
         }
         else // decrypt path
         {
             DES_Decrypt(&block,subkeys);
+            block=swapEndian64(block);
             fwrite(&block, sizeof(uint64_t), 1, fplain);
             printf("Block decrypted: %016llx\n", block);
 
